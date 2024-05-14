@@ -3,6 +3,8 @@ from torch import nn
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
+import faiss
+from annoy import AnnoyIndex
 
 
 class TextEncoder(nn.Module):
@@ -175,37 +177,38 @@ class AggregatedLoss(nn.Module):
         return loss
 
 
-def get_embeddings(film_encoder, text_encoder, vocab, film_descriptions_encoded, batch_size=30, device='cpu'):
-    film_encoder.eval()
-    text_encoder.eval()
+class AnnoySearchEngine:
+    def __init__(self, dim, text_embeddings_dict, film_embeddings_dict, 
+                num_trees, movieId_to_title, search_type):
+        self.dim = dim
+        self.num_trees = num_trees
+        self.movieId_to_title = movieId_to_title
+        self.search_type = search_type
+        self.idx_to_movieId = {}
+        self.text_index = None
+        self.film_index = None
+        self.text_embeddings_dict = text_embeddings_dict
+        self.film_embeddings_dict = film_embeddings_dict
 
-    film_embeddings = {}
-    text_embeddings = {}
-    for i in tqdm(range(0, len(vocab.index_to_word), batch_size)):
-        film_ids = []
-        descriptions = []
-        attention_masks = []
-        for j in range(i, min(i + batch_size, len(vocab.index_to_word))):
-            film_id = torch.tensor([vocab.word_to_index[vocab.index_to_word[j]]]).to(device)
-            film_id = film_id.unsqueeze(0)
-            film_ids.append(film_id)
+    def build_trees(self):
+        self.text_index = AnnoyIndex(self.dim, self.search_type)
+        self.film_index = AnnoyIndex(self.dim, self.search_type)
 
-            description = film_descriptions_encoded[vocab.index_to_word[j]]
-            description = description['input_ids'].unsqueeze(0).to(device)
-            attention_mask = film_descriptions_encoded[vocab.index_to_word[j]]
-            attention_mask = attention_mask['attention_mask'].unsqueeze(0).to(device)
-            descriptions.append(description)
-            attention_masks.append(attention_mask)
+        for i, (film_id, text_embedding) in enumerate(self.text_embeddings_dict.items()):
+            self.idx_to_movieId[i] = film_id
+            self.text_index.add_item(i, text_embedding.numpy())
+            self.film_index.add_item(i, self.film_embeddings_dict[film_id].numpy())
 
-        film_ids = torch.cat(film_ids, dim=0)
-        descriptions = torch.cat(descriptions, dim=0)
-        attention_masks = torch.cat(attention_masks, dim=0)
+        self.text_index.build(self.num_trees)
+        self.film_index.build(self.num_trees)
 
-        film_logits, film_embedding = film_encoder(film_ids)
-        text_embedding = text_encoder(descriptions, attention_masks)
+    def search_in_text_index(self, film_id, top_n=10):
+        text_embedding = self.text_embeddings_dict[film_id]
+        idxs = self.text_index.get_nns_by_vector(text_embedding.numpy(), top_n)
+        return [self.movieId_to_title[self.idx_to_movieId[idx]] for idx in idxs]
 
-        for film, film_emb, text_emb in zip(film_ids, film_embedding, text_embedding):
-            film_embeddings[vocab.index_to_word[film.item()]] = film_emb
-            text_embeddings[vocab.index_to_word[film.item()]] = text_emb
-
-    return film_embeddings, text_embeddings
+    def search_in_film_index(self, film_id, top_n=10):
+        film_embedding = self.film_embeddings_dict[film_id]
+        idxs = self.film_index.get_nns_by_vector(film_embedding.numpy(), top_n)
+        return [self.movieId_to_title[self.idx_to_movieId[idx]] for idx in idxs]
+        

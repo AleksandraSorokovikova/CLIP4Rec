@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from models import AggregatedLoss
+from src.models import AggregatedLoss
 
 
 def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr, device='cpu', iter_verbose=500):
@@ -99,8 +99,8 @@ def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu')
             inputs, targets = inputs.to(device), targets.to(device)
 
             optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            film_logits, film_embeddings = model(inputs)
+            loss = criterion(film_logits, targets)
             loss.backward()
             optimizer.step()
 
@@ -112,10 +112,10 @@ def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu')
             with torch.no_grad():
                 for inputs, targets in val_loader:
                     inputs, targets = inputs.to(device), targets.to(device)
-                    outputs = model(inputs)
-                    loss = criterion(outputs, targets)
+                    film_logits, film_embeddings = model(inputs)
+                    loss = criterion(film_logits, targets)
                     total_loss += loss.item()
-                    _, predicted = torch.max(outputs, 1)
+                    _, predicted = torch.max(film_logits, 1)
                     total_correct += (predicted == targets).sum().item()
                     total_samples += targets.size(0)
 
