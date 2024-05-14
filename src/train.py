@@ -28,7 +28,7 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr,
             attention_masks = batch['attention_masks'].to(device)
             outputs = batch['outputs'].to(device)
 
-            film_logits, film_embeddings = film_encoder(film_ids)
+            film_logits, film_embeddings, _ = film_encoder(film_ids)
             text_embeddings = text_encoder(descriptions, attention_masks, outputs)
 
             loss = aggregated_loss(film_ids, film_logits, target_id, film_embeddings, text_embeddings)
@@ -71,7 +71,7 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr,
                     attention_masks = batch['attention_masks'].to(device)
                     outputs = batch['outputs'].to(device)
 
-                    film_logits, film_embeddings = film_encoder(film_ids)
+                    film_logits, film_embeddings, _ = film_encoder(film_ids)
                     text_embeddings = text_encoder(descriptions, attention_masks, outputs)
 
                     loss = aggregated_loss(film_ids, film_logits, target_id, film_embeddings, text_embeddings,
@@ -101,7 +101,7 @@ def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu')
             inputs, targets = inputs.to(device), targets.to(device)
 
             optimizer.zero_grad()
-            film_logits, film_embeddings = model(inputs)
+            film_logits, film_embeddings, _ = model(inputs)
             loss = criterion(film_logits, targets)
             loss.backward()
             optimizer.step()
@@ -114,7 +114,7 @@ def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu')
             with torch.no_grad():
                 for inputs, targets in val_loader:
                     inputs, targets = inputs.to(device), targets.to(device)
-                    film_logits, film_embeddings = model(inputs)
+                    film_logits, film_embeddings, _ = model(inputs)
                     loss = criterion(film_logits, targets)
                     total_loss += loss.item()
                     _, predicted = torch.max(film_logits, 1)

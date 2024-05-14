@@ -55,7 +55,7 @@ class Inference:
         input_tensor = torch.tensor([input_indices], dtype=torch.long).to(self.device)
 
         with torch.no_grad():
-            logits, embeddings = self.film_encoder(input_tensor)
+            logits, embeddings, _ = self.film_encoder(input_tensor)
             top_logits, top_indices = logits.topk(top_n, dim=1)
 
         top_words = [self.vocab.idx_to_word(idx.item()) for idx in top_indices[0]]
@@ -63,16 +63,18 @@ class Inference:
 
         return predicted_movie
 
-    def get_embeddings(self, film_descriptions_encoded, batch_size):
+    def get_embeddings(self, film_descriptions_encoded, batch_size=32):
 
         film_embeddings = {}
         text_embeddings = {}
-        all_film_indices = list(self.vocab.index_to_word.keys())[:100]
+        all_film_indices = list(self.vocab.index_to_word.keys())
         for i in tqdm(range(0, len(all_film_indices), batch_size)):
             film_ids = []
             descriptions = []
             attention_masks = []
             for j in range(i, min(i + batch_size, len(all_film_indices))):
+                if self.vocab.index_to_word[all_film_indices[j]] == '<PAD>':
+                    continue
                 film_id = torch.tensor([all_film_indices[j]], dtype=torch.long).to(self.device)
                 film_id = film_id.unsqueeze(0)
                 film_ids.append(film_id)
@@ -84,11 +86,14 @@ class Inference:
                 attention_masks.append(attention_mask)
 
             film_ids = torch.cat(film_ids, dim=0)
-            descriptions = torch.cat(descriptions, dim=0)
-            attention_masks = torch.cat(attention_masks, dim=0)
+            descriptions = torch.cat(descriptions, dim=0).unsqueeze(dim=1)
+            attention_masks = torch.cat(attention_masks, dim=0).unsqueeze(dim=1)
 
-            film_logits, film_embedding = self.film_encoder(film_ids)
-            text_embedding = self.text_encoder(descriptions, attention_masks)
+            with torch.no_grad():
+                film_logits, film_embedding, _ = self.film_encoder(film_ids)
+                film_embedding = film_embedding.squeeze(dim=1)
+                text_embedding = self.text_encoder(descriptions, attention_masks)
+                text_embedding = text_embedding.squeeze(dim=1)
 
             for film, film_emb, text_emb in zip(film_ids, film_embedding, text_embedding):
                 film_embeddings[self.vocab.index_to_word[film.item()]] = film_emb
@@ -96,7 +101,7 @@ class Inference:
 
         return film_embeddings, text_embeddings
 
-    def build_annoy_model(self, film_descriptions_encoded, num_trees=10, batch_size=32, search_type='euclidian'):
+    def build_annoy_model(self, film_descriptions_encoded, num_trees=10, batch_size=32, search_type='euclidean'):
         print('Counting embeddings...')
         film_embeddings, text_embeddings = self.get_embeddings(film_descriptions_encoded, batch_size)
         print('Building Annoy model...')
@@ -104,21 +109,77 @@ class Inference:
             self.dim,
             num_trees=num_trees,
             search_type=search_type,
-            movieId_to_title=self.idx_to_movie,
         )
         self.annoy_model.build_trees(film_embeddings, text_embeddings)
 
     def get_film_embeddings(self, film_ids):
+        return_list = True
+        if type(film_ids) == int:
+            film_ids = [film_ids]
+            return_list = False
+        indices = [self.vocab.word_to_index[film_id] for film_id in film_ids]
+        film_ids_tensor = torch.tensor(indices, dtype=torch.long).unsqueeze(dim=1).to(self.device)
         with torch.no_grad():
-            film_ids_tensor = torch.tensor([film_ids], dtype=torch.long).to(self.device)
-            film_logits, film_embeddings = self.film_encoder(film_ids_tensor)
-        return film_embeddings
+            film_logits, film_embeddings, _ = self.film_encoder(film_ids_tensor)
+        if not return_list:
+            return film_embeddings.squeeze(dim=1)[0]
+        return film_embeddings.squeeze(dim=1)
 
     def get_text_embeddings(self, descriptions):
+        return_list = True
+        if type(descriptions) == str:
+            descriptions = [descriptions]
+            return_list = False
         encoded_descriptions = self.tokenizer(descriptions, return_tensors="pt", max_length=self.max_length, truncation=True, padding="max_length")
-        input_ids = encoded_descriptions['input_ids'].to(self.device)
-        attention_mask = encoded_descriptions['attention_mask'].to(self.device)
+        input_ids = encoded_descriptions['input_ids'].unsqueeze(0).to(self.device)
+        attention_mask = encoded_descriptions['attention_mask'].unsqueeze(0).to(self.device)
         with torch.no_grad():
             text_embeddings = self.text_encoder(input_ids, attention_mask)
-        return text_embeddings
+        if not return_list:
+            return text_embeddings.squeeze(dim=0)[0]
+        return text_embeddings.squeeze(dim=0)
+    
+    def get_mean_embedding(self, film_ids):
+        film_embeddings = self.get_film_embeddings(film_ids)
+        return film_embeddings.mean(dim=0)
+
+    def get_agreggated_embedding(self, film_ids):
+        indices = [self.vocab.word_to_index[film_id] for film_id in film_ids]
+        indices = [0] * (self.seq_len - len(indices)) + indices
+        film_ids_tensor = torch.tensor(indices, dtype=torch.long).unsqueeze(dim=0).to(self.device)
+        with torch.no_grad():
+            film_logits, film_embeddings, aggregated_embedding = self.film_encoder(film_ids_tensor)
+        return aggregated_embedding.squeeze(dim=0)
+
+    def search_text(self, text, in_films=False, top_n=10):
+        if self.annoy_model is None:
+            raise ValueError('Annoy model is not built. Run build_annoy_model method first.')
+        text_embedding = self.get_text_embeddings(text).cpu().numpy()
+        if in_films:
+            result = self.annoy_model.search_in_film_index(text_embedding, top_n)
+        else:
+            result = self.annoy_model.search_in_text_index(text_embedding, top_n)
+        return [self.idx_to_movie[i] for i in result]
+
+    def search_film(self, film_id, in_texts=False, top_n=10):
+        if self.annoy_model is None:
+            raise ValueError('Annoy model is not built. Run build_annoy_model method first.')
+        film_embedding = self.get_film_embeddings(film_id).cpu().numpy()
+        if in_texts:
+            result = self.annoy_model.search_in_text_index(film_embedding, top_n)
+        else:
+            result = self.annoy_model.search_in_film_index(film_embedding, top_n)
+        return [self.idx_to_movie[i] for i in result]
+
+    def search_film_by_sequence_and_text(self, film_ids, text, in_films=True, top_n=10):
+        agg_emb = self.get_agreggated_embedding(film_ids)
+        text_emb = self.get_text_embeddings(text)
+        mean_emb = torch.stack([agg_emb, text_emb]).mean(dim=0)
+        assert mean_emb.size(0) == self.dim
+
+        if in_films:
+            result = self.annoy_model.search_in_film_index(mean_emb, top_n)
+        else:
+            result = self.annoy_model.search_in_text_index(mean_emb, top_n)
+        return [self.idx_to_movie[i] for i in result]
     
