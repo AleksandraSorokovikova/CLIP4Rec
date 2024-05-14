@@ -16,8 +16,10 @@ class Inference:
             movies_metadata,  # DataFrame with the movies metadata
             seq_len,  # Movies sequence length
             bert_model,  # Bert embeddings model
+            bert_tokenizer, # Bert tokenizer
             device='cpu',
-            hidden_dim=None  # Hidden dimension for the LSTMFilmEncoder model if it's used
+            hidden_dim=None,  # Hidden dimension for the LSTMFilmEncoder model if it's used
+            max_length=125
     ):
 
         if hidden_dim is not None:
@@ -40,23 +42,22 @@ class Inference:
         self.device = device
         self.dim = dim
         self.annoy_model = None
+        self.max_length = max_length
 
         self.film_encoder.eval()
         self.text_encoder.eval()
 
     def predict_next_movie(self, list_movies, top_n=10):
         sequence = [self.movie_to_idx[movie] for movie in list_movies]
-        input_indices = [self.vocab.word_to_index(word) for word in sequence]
+        input_indices = [self.vocab.word_to_idx(word) for word in sequence]
         input_indices = [0] * (self.seq_len - len(input_indices)) + input_indices
-
-        positions = torch.arange(self.seq_len).unsqueeze(0).expand(1, self.seq_len).to(self.device)
         input_tensor = torch.tensor([input_indices], dtype=torch.long).to(self.device)
 
         with torch.no_grad():
-            logits = self.film_encoder(input_tensor, positions)
+            logits, embeddings = self.film_encoder(input_tensor)
             top_logits, top_indices = logits.topk(top_n, dim=1)
 
-        top_words = [self.vocab.index_to_word(idx.item()) for idx in top_indices[0]]
+        top_words = [self.vocab.idx_to_word(idx.item()) for idx in top_indices[0]]
         predicted_movie = [self.idx_to_movie[i] for i in top_words]
 
         return predicted_movie
@@ -65,7 +66,7 @@ class Inference:
 
         film_embeddings = {}
         text_embeddings = {}
-        all_film_indices = list(self.vocab.index_to_word.keys())
+        all_film_indices = list(self.vocab.index_to_word.keys())[:100]
         for i in tqdm(range(0, len(all_film_indices), batch_size)):
             film_ids = []
             descriptions = []
@@ -107,3 +108,18 @@ class Inference:
             movieId_to_title=self.idx_to_movie,
         )
         self.annoy_model.build_trees()
+
+    def get_film_embeddings(self, film_ids):
+        with torch.no_grad():
+            film_ids_tensor = torch.tensor([film_ids], dtype=torch.long).to(self.device)
+            film_logits, film_embeddings = self.film_encoder(film_ids_tensor)
+        return film_embeddings
+
+    def get_text_embeddings(self, descriptions):
+        encoded_descriptions = tokenizer(descriptions, return_tensors="pt", max_length=self.max_length, truncation=True, padding="max_length")
+        input_ids = encoded_descriptions['input_ids'].to(self.device)
+        attention_mask = encoded_descriptions['attention_mask'].to(self.device)
+        with torch.no_grad():
+            text_embeddings = self.text_encoder(input_ids, attention_mask)
+        return text_embeddings
+    

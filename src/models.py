@@ -178,8 +178,7 @@ class AggregatedLoss(nn.Module):
 
 
 class AnnoySearchEngine:
-    def __init__(self, dim, text_embeddings_dict, film_embeddings_dict, 
-                num_trees, movieId_to_title, search_type):
+    def __init__(self, dim, num_trees, movieId_to_title, search_type):
         self.dim = dim
         self.num_trees = num_trees
         self.movieId_to_title = movieId_to_title
@@ -187,10 +186,8 @@ class AnnoySearchEngine:
         self.idx_to_movieId = {}
         self.text_index = None
         self.film_index = None
-        self.text_embeddings_dict = text_embeddings_dict
-        self.film_embeddings_dict = film_embeddings_dict
 
-    def build_trees(self):
+    def build_trees(self, text_embeddings_dict, film_embeddings_dict):
         self.text_index = AnnoyIndex(self.dim, self.search_type)
         self.film_index = AnnoyIndex(self.dim, self.search_type)
 
@@ -202,13 +199,11 @@ class AnnoySearchEngine:
         self.text_index.build(self.num_trees)
         self.film_index.build(self.num_trees)
 
-    def search_in_text_index(self, film_id, top_n=10):
-        text_embedding = self.text_embeddings_dict[film_id]
+    def search_in_text_index(self, text_embedding, top_n=10):
         idxs = self.text_index.get_nns_by_vector(text_embedding.numpy(), top_n)
         return [self.movieId_to_title[self.idx_to_movieId[idx]] for idx in idxs]
 
-    def search_in_film_index(self, film_id, top_n=10):
-        film_embedding = self.film_embeddings_dict[film_id]
+    def search_in_film_index(self, film_embedding, top_n=10):
         idxs = self.film_index.get_nns_by_vector(film_embedding.numpy(), top_n)
         return [self.movieId_to_title[self.idx_to_movieId[idx]] for idx in idxs]
         
