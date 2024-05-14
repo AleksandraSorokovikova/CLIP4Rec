@@ -169,11 +169,12 @@ def prepare_dataset(user_item_sequences, film_descriptions, tokenizer, vocab, ma
 
 
 class FilmRecommendationDataset(Dataset):
-    def __init__(self, data, film_descriptions_encoded):
+    def __init__(self, data, film_descriptions_encoded, bert_outputs=None):
 
         self.film_ids = data['film_ids']
         self.target_id = data['target_id']
         self.film_descriptions_encoded = film_descriptions_encoded
+        self.bert_outputs = bert_outputs
 
     def __len__(self):
         return len(self.film_ids)
@@ -182,16 +183,19 @@ class FilmRecommendationDataset(Dataset):
         descriptions = []
         attention_masks = []
         film_ids = self.film_ids[idx]
+        outputs = []
         for film_id in film_ids:
             descriptions.append(self.film_descriptions_encoded[film_id]['input_ids'])
             attention_masks.append(self.film_descriptions_encoded[film_id]['attention_mask'])
-        descriptions = torch.stack(descriptions)
-        attention_masks = torch.stack(attention_masks)
+            if self.bert_outputs is not None:
+                outputs.append(self.bert_outputs[film_id])
+
         return {
             'film_ids': torch.tensor(film_ids, dtype=torch.long),
             'target_id': self.target_id[idx],
-            'descriptions': descriptions,
-            'attention_masks': attention_masks
+            'descriptions': torch.stack(descriptions),
+            'attention_masks': torch.stack(attention_masks),
+            'outputs': torch.stack(outputs) if len(outputs) > 0 else None
         }
 
 
@@ -222,3 +226,15 @@ class CollateFunction:
         inputs_padded = torch.tensor(inputs, dtype=torch.long)
         targets_tensor = torch.tensor(targets, dtype=torch.long)
         return inputs_padded, targets_tensor
+
+
+def get_outputs_from_bert(bert_model, film_descriptions_encoded):
+    bert_outputs = {}
+    for film_id in tqdm(film_descriptions_encoded):
+        encoded_description = film_descriptions_encoded[film_id]
+        input_ids = encoded_description['input_ids'].unsqueeze(0)
+        attention_mask = encoded_description['attention_mask'].unsqueeze(0)
+
+        outputs = bert_model(input_ids=input_ids, attention_mask=attention_mask)
+        bert_outputs[film_id] = outputs
+    return bert_outputs

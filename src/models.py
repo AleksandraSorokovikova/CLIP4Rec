@@ -12,12 +12,14 @@ class TextEncoder(nn.Module):
         self.fc = nn.Linear(self.bert.config.hidden_size, output_dim)
         self.tanh = nn.Tanh()
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, outputs=None):
         batch_size, num_films, seq_len = input_ids.size()
-        input_ids = input_ids.view(-1, seq_len)
-        attention_mask = attention_mask.view(-1, seq_len)
 
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        if outputs is None:
+            input_ids = input_ids.view(-1, seq_len)
+            attention_mask = attention_mask.view(-1, seq_len)
+            outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+
         last_hidden_state = outputs.last_hidden_state
         cls_embedding = last_hidden_state[:, 0, :]
         fc_output = self.fc(cls_embedding)
