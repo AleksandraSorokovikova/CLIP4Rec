@@ -26,10 +26,9 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr,
             target_id = batch['target_id'].to(device)
             descriptions = batch['descriptions'].to(device)
             attention_masks = batch['attention_masks'].to(device)
-            outputs = batch['outputs'].to(device)
 
             film_logits, film_embeddings, _ = film_encoder(film_ids)
-            text_embeddings = text_encoder(descriptions, attention_masks, outputs)
+            text_embeddings = text_encoder(descriptions, attention_masks)
 
             loss = aggregated_loss(film_ids, film_logits, target_id, film_embeddings, text_embeddings)
             loss.backward()
@@ -69,10 +68,9 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr,
                     target_id = batch['target_id'].to(device)
                     descriptions = batch['descriptions'].to(device)
                     attention_masks = batch['attention_masks'].to(device)
-                    outputs = batch['outputs'].to(device)
 
                     film_logits, film_embeddings, _ = film_encoder(film_ids)
-                    text_embeddings = text_encoder(descriptions, attention_masks, outputs)
+                    text_embeddings = text_encoder(descriptions, attention_masks)
 
                     loss = aggregated_loss(film_ids, film_logits, target_id, film_embeddings, text_embeddings,
                                            train=False)

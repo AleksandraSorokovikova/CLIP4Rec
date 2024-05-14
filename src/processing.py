@@ -195,7 +195,6 @@ class FilmRecommendationDataset(Dataset):
             'target_id': self.target_id[idx],
             'descriptions': torch.stack(descriptions),
             'attention_masks': torch.stack(attention_masks),
-            'outputs': torch.stack(outputs) if len(outputs) > 0 else None
         }
 
 

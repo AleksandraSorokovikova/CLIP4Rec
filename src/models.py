@@ -160,7 +160,7 @@ class CLIPLoss(nn.Module):
             loss_t2i = F.cross_entropy(similarity.t(), labels)
             loss = (loss_i2t + loss_t2i) / 2
             batch_loss += loss
-        batch_loss = batch_loss / films_embeddings
+        batch_loss = batch_loss / len(film_ids)
         return batch_loss
 
 
