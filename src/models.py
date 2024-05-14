@@ -31,7 +31,7 @@ class TextEncoder(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, embedding_dim, hidden_dim):
         super(Attention, self).__init__()
         self.hidden_dim = hidden_dim
         self.linear = nn.Linear(hidden_dim, hidden_dim)
@@ -54,7 +54,7 @@ class LSTMFilmEncoder(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
         self.batch_norm = nn.BatchNorm1d(hidden_dim)
-        self.attention = Attention(hidden_dim)
+        self.attention = Attention(embedding_dim, hidden_dim)
         self.batch_norm_fc = nn.BatchNorm1d(hidden_dim)
         self.fc = nn.Linear(hidden_dim, vocab_size)
 
@@ -107,7 +107,6 @@ class SASFilmEncoder(nn.Module):
         x = self.final_layer(x)
         aggregated_embedding = self.aggregate_fc(aggregated_embedding)
         return x[:, -1, :], embeddings, aggregated_embedding
-
 
 
 class TransformerBlock(nn.Module):
