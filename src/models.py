@@ -191,10 +191,10 @@ class AnnoySearchEngine:
         self.text_index = AnnoyIndex(self.dim, self.search_type)
         self.film_index = AnnoyIndex(self.dim, self.search_type)
 
-        for i, (film_id, text_embedding) in enumerate(self.text_embeddings_dict.items()):
+        for i, (film_id, text_embedding) in enumerate(text_embeddings_dict.items()):
             self.idx_to_movieId[i] = film_id
             self.text_index.add_item(i, text_embedding.numpy())
-            self.film_index.add_item(i, self.film_embeddings_dict[film_id].numpy())
+            self.film_index.add_item(i, film_embeddings_dict[film_id].numpy())
 
         self.text_index.build(self.num_trees)
         self.film_index.build(self.num_trees)

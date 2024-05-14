@@ -43,6 +43,7 @@ class Inference:
         self.dim = dim
         self.annoy_model = None
         self.max_length = max_length
+        self.tokenizer = bert_tokenizer
 
         self.film_encoder.eval()
         self.text_encoder.eval()
@@ -100,14 +101,12 @@ class Inference:
         film_embeddings, text_embeddings = self.get_embeddings(film_descriptions_encoded, batch_size)
         print('Building Annoy model...')
         self.annoy_model = AnnoySearchEngine(
-            film_embeddings,
-            text_embeddings,
             self.dim,
             num_trees=num_trees,
             search_type=search_type,
             movieId_to_title=self.idx_to_movie,
         )
-        self.annoy_model.build_trees()
+        self.annoy_model.build_trees(film_embeddings, text_embeddings)
 
     def get_film_embeddings(self, film_ids):
         with torch.no_grad():
@@ -116,7 +115,7 @@ class Inference:
         return film_embeddings
 
     def get_text_embeddings(self, descriptions):
-        encoded_descriptions = tokenizer(descriptions, return_tensors="pt", max_length=self.max_length, truncation=True, padding="max_length")
+        encoded_descriptions = self.tokenizer(descriptions, return_tensors="pt", max_length=self.max_length, truncation=True, padding="max_length")
         input_ids = encoded_descriptions['input_ids'].to(self.device)
         attention_mask = encoded_descriptions['attention_mask'].to(self.device)
         with torch.no_grad():
