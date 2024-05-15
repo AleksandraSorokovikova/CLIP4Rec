@@ -4,7 +4,8 @@ from tqdm import tqdm
 from src.models import AggregatedLoss
 
 
-def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr, device='cpu', iter_verbose=500):
+def train_clip(film_encoder, text_encoder, train_loader, val_loader,
+               epochs, lr, device='cpu', iter_verbose=500, folder='artifacts'):
     aggregated_loss = AggregatedLoss().to(device)
     optimizer = torch.optim.Adam(list(film_encoder.parameters()) + list(text_encoder.parameters()), lr=lr)
 
@@ -88,13 +89,23 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader, epochs, lr,
             print(f"Val Classification loss: {total_classification_loss / len(val_loader):.4f}")
             print(f"Val Contrastive loss: {total_contrastive_loss / len(val_loader):.4f}")
 
+        if folder:
+            torch.save(film_encoder.state_dict(), f'{folder}/film_encoder_weights_{epoch}.pth')
+            torch.save(text_encoder.state_dict(), f'{folder}/text_encoder_weights_{epoch}.pth')
+
 
 def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu'):
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     for epoch in range(epochs):
+        print(f"Epoch {epoch + 1}")
+        print()
+
         model.train()
         model.to(device)
+        train_loss = 0.0
+        train_correct = 0
+        train_samples = 0
         for inputs, targets in tqdm(train_loader):
             inputs, targets = inputs.to(device), targets.to(device)
 
@@ -103,6 +114,15 @@ def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu')
             loss = criterion(film_logits, targets)
             loss.backward()
             optimizer.step()
+
+            train_loss += loss.item()
+            _, predicted = torch.max(film_logits, 1)
+            train_correct += (predicted == targets).sum().item()
+            train_samples += targets.size(0)
+
+        print(f"Train Loss: {train_loss / len(train_loader):.4f}")
+        print(f"Train Accuracy: {train_correct / train_samples:.4f}")
+        print()
 
         if (epoch + 1) % 1 == 0:
             model.eval()
@@ -121,4 +141,6 @@ def train_recommender(model, train_loader, val_loader, epochs, lr, device='cpu')
 
             average_loss = total_loss / len(val_loader)
             accuracy = total_correct / total_samples
-            print(f"Epoch {epoch + 1}: Val Loss: {average_loss:.4f}, Val Accuracy: {accuracy:.4f}")
+            print(f"Val Loss: {average_loss:.4f}")
+            print(f"Val Accuracy: {accuracy:.4f}")
+            print()

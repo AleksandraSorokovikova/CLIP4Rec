@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from annoy import AnnoyIndex
 from tqdm import tqdm
+import pickle
 
 
 class TextEncoder(nn.Module):
@@ -15,17 +16,16 @@ class TextEncoder(nn.Module):
 
     def forward(self, input_ids, attention_mask, outputs=None):
         batch_size, num_films, seq_len = input_ids.size()
+        input_ids = input_ids.view(-1, seq_len)
+        attention_mask = attention_mask.view(-1, seq_len)
 
-        if outputs is None:
-            input_ids = input_ids.view(-1, seq_len)
-            attention_mask = attention_mask.view(-1, seq_len)
+        with torch.no_grad():
             outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+            last_hidden_state = outputs.last_hidden_state
+            cls_embedding = last_hidden_state[:, 0, :]
 
-        last_hidden_state = outputs.last_hidden_state
-        cls_embedding = last_hidden_state[:, 0, :]
         fc_output = self.fc(cls_embedding)
         activated_output = self.tanh(fc_output)
-
         activated_output = activated_output.view(batch_size, num_films, -1)
         return activated_output
 
@@ -130,8 +130,8 @@ class TransformerBlock(nn.Module):
         x = self.layer_norm1(x + attn_output).permute(1, 0, 2)
         ff_output = self.feed_forward(x)
         output = self.layer_norm2(x + ff_output)
-        aggregated_embedding = torch.mean(output, dim=1) 
-        aggregated_embedding = self.aggregate_fc(aggregated_embedding) 
+        aggregated_embedding = torch.mean(output, dim=1)
+        aggregated_embedding = self.aggregate_fc(aggregated_embedding)
 
         return output, aggregated_embedding
 
@@ -210,23 +210,40 @@ class AnnoySearchEngine:
 
             text_embedding = text_embedding.cpu().numpy()
             text_embedding = text_embedding / np.linalg.norm(text_embedding, ord=2, axis=-1, keepdims=True)
-            
+
             film_embedding = film_embeddings_dict[film_id].cpu().numpy()
             film_embedding = film_embedding / np.linalg.norm(film_embedding, ord=2, axis=-1, keepdims=True)
-            
+
             self.text_index.add_item(i, text_embedding)
             self.film_index.add_item(i, film_embedding)
 
         self.text_index.build(self.num_trees)
         self.film_index.build(self.num_trees)
 
+    def save_indexes(self, text_index_path, film_index_path, idx_to_movieId_path):
+        self.text_index.save(text_index_path)
+        self.film_index.save(film_index_path)
+        with open(idx_to_movieId_path, 'wb') as f:
+            pickle.dump(self.idx_to_movieId, f)
+
+    def init_index(self, text_index_path, film_index_path, idx_to_movieId_path):
+        self.text_index = AnnoyIndex(self.dim, self.search_type)
+        self.film_index = AnnoyIndex(self.dim, self.search_type)
+        self.text_index.load(text_index_path)
+        self.film_index.load(film_index_path)
+        with open(idx_to_movieId_path, 'rb') as f:
+            self.idx_to_movieId = pickle.load(f)
+
     def search_in_text_index(self, embedding, top_n=10):
+        if self.text_index is None:
+            raise ValueError("text_index is not built, run build_trees or init_index method first")
         embedding = embedding / np.linalg.norm(embedding, ord=2, axis=-1, keepdims=True)
         idxs = self.text_index.get_nns_by_vector(embedding, top_n)
         return [self.idx_to_movieId[i] for i in idxs]
 
     def search_in_film_index(self, embedding, top_n=10):
+        if self.film_index is None:
+            raise ValueError("film_index is not built, run build_trees or init_index method first")
         embedding = embedding / np.linalg.norm(embedding, ord=2, axis=-1, keepdims=True)
         idxs = self.film_index.get_nns_by_vector(embedding, top_n)
         return [self.idx_to_movieId[i] for i in idxs]
-        

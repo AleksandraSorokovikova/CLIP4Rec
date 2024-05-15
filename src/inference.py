@@ -16,7 +16,7 @@ class Inference:
             movies_metadata,  # DataFrame with the movies metadata
             seq_len,  # Movies sequence length
             bert_model,  # Bert embeddings model
-            bert_tokenizer, # Bert tokenizer
+            bert_tokenizer,  # Bert tokenizer
             device='cpu',
             hidden_dim=None,  # Hidden dimension for the LSTMFilmEncoder model if it's used
             max_length=125
@@ -41,9 +41,9 @@ class Inference:
         self.seq_len = seq_len
         self.device = device
         self.dim = dim
-        self.annoy_model = None
         self.max_length = max_length
         self.tokenizer = bert_tokenizer
+        self.annoy_model = None
 
         self.film_encoder.eval()
         self.text_encoder.eval()
@@ -101,16 +101,13 @@ class Inference:
 
         return film_embeddings, text_embeddings
 
-    def build_annoy_model(self, film_descriptions_encoded, num_trees=10, batch_size=32, search_type='euclidean'):
-        print('Counting embeddings...')
-        film_embeddings, text_embeddings = self.get_embeddings(film_descriptions_encoded, batch_size)
-        print('Building Annoy model...')
+    def init_annoy_model(self, text_index_path, film_index_path, idx_to_movieId_path, num_trees=10, search_type='euclidean'):
         self.annoy_model = AnnoySearchEngine(
-            self.dim,
+            dim=self.dim,
             num_trees=num_trees,
             search_type=search_type,
         )
-        self.annoy_model.build_trees(film_embeddings, text_embeddings)
+        self.annoy_model.init_index(text_index_path, film_index_path, idx_to_movieId_path)
 
     def get_film_embeddings(self, film_ids):
         return_list = True
@@ -130,7 +127,8 @@ class Inference:
         if type(descriptions) == str:
             descriptions = [descriptions]
             return_list = False
-        encoded_descriptions = self.tokenizer(descriptions, return_tensors="pt", max_length=self.max_length, truncation=True, padding="max_length")
+        encoded_descriptions = self.tokenizer(descriptions, return_tensors="pt", max_length=self.max_length,
+                                              truncation=True, padding="max_length")
         input_ids = encoded_descriptions['input_ids'].unsqueeze(0).to(self.device)
         attention_mask = encoded_descriptions['attention_mask'].unsqueeze(0).to(self.device)
         with torch.no_grad():
@@ -138,7 +136,7 @@ class Inference:
         if not return_list:
             return text_embeddings.squeeze(dim=0)[0]
         return text_embeddings.squeeze(dim=0)
-    
+
     def get_mean_embedding(self, film_ids):
         film_embeddings = self.get_film_embeddings(film_ids)
         return film_embeddings.mean(dim=0)
@@ -171,15 +169,24 @@ class Inference:
             result = self.annoy_model.search_in_film_index(film_embedding, top_n)
         return [self.idx_to_movie[i] for i in result]
 
-    def search_film_by_sequence_and_text(self, film_ids, text, in_films=True, top_n=10):
-        agg_emb = self.get_agreggated_embedding(film_ids)
-        text_emb = self.get_text_embeddings(text)
-        mean_emb = torch.stack([agg_emb, text_emb]).mean(dim=0)
-        assert mean_emb.size(0) == self.dim
+    def search_film_by_sequence_and_text(self, film_ids, text, in_films=True, agg=True, top_n=10):
+        if self.annoy_model is None:
+            raise ValueError('Annoy model is not built. Run init_annoy_model method first.')
+        if agg:
+            agg_emb = self.get_agreggated_embedding(film_ids).cpu().numpy()
+        else:
+            agg_emb = self.get_film_embeddings(film_ids).mean(dim=0).cpu().numpy()
+
+        text_emb = self.get_text_embeddings(text).cpu().numpy()
+
+        agg_emb = agg_emb / np.linalg.norm(agg_emb, ord=2, axis=-1, keepdims=True)
+        text_emb = text_emb / np.linalg.norm(text_emb, ord=2, axis=-1, keepdims=True)
+
+        mean_emb = np.mean([agg_emb, text_emb], axis=0)
+        assert mean_emb.shape[0] == self.dim
 
         if in_films:
             result = self.annoy_model.search_in_film_index(mean_emb, top_n)
         else:
             result = self.annoy_model.search_in_text_index(mean_emb, top_n)
         return [self.idx_to_movie[i] for i in result]
-    
