@@ -8,11 +8,12 @@ import pickle
 
 
 class TextEncoder(nn.Module):
-    def __init__(self, bert_model, output_dim):
+    def __init__(self, bert_model, output_dim, add_fc_layer=True):
         super(TextEncoder, self).__init__()
         self.bert = bert_model
         self.fc = nn.Linear(self.bert.config.hidden_size, output_dim)
         self.tanh = nn.Tanh()
+        self.add_fc_layer = add_fc_layer
 
     def forward(self, input_ids, attention_mask, outputs=None):
         batch_size, num_films, seq_len = input_ids.size()
@@ -24,10 +25,13 @@ class TextEncoder(nn.Module):
             last_hidden_state = outputs.last_hidden_state
             cls_embedding = last_hidden_state[:, 0, :]
 
-        fc_output = self.fc(cls_embedding)
-        activated_output = self.tanh(fc_output)
-        activated_output = activated_output.view(batch_size, num_films, -1)
-        return activated_output
+        if self.add_fc_layer:
+            fc_output = self.fc(cls_embedding)
+            activated_output = self.tanh(fc_output)
+            output = activated_output.view(batch_size, num_films, -1)
+        else:
+            output = cls_embedding.view(batch_size, num_films, -1)
+        return output
 
 
 class Attention(nn.Module):
@@ -236,14 +240,14 @@ class AnnoySearchEngine:
 
     def search_in_text_index(self, embedding, top_n=10):
         if self.text_index is None:
-            raise ValueError("text_index is not built, run build_trees or init_index method first")
+            raise ValueError("text_index is not built")
         embedding = embedding / np.linalg.norm(embedding, ord=2, axis=-1, keepdims=True)
         idxs = self.text_index.get_nns_by_vector(embedding, top_n)
         return [self.idx_to_movieId[i] for i in idxs]
 
     def search_in_film_index(self, embedding, top_n=10):
         if self.film_index is None:
-            raise ValueError("film_index is not built, run build_trees or init_index method first")
+            raise ValueError("film_index is not built")
         embedding = embedding / np.linalg.norm(embedding, ord=2, axis=-1, keepdims=True)
         idxs = self.film_index.get_nns_by_vector(embedding, top_n)
         return [self.idx_to_movieId[i] for i in idxs]

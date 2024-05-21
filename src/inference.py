@@ -169,9 +169,9 @@ class Inference:
             result = self.annoy_model.search_in_film_index(film_embedding, top_n)
         return [self.idx_to_movie[i] for i in result]
 
-    def search_film_by_sequence_and_text(self, film_ids, text, in_films=True, agg=True, top_n=10):
+    def search_film_by_sequence_and_text(self, film_ids, text, in_films=True, agg=True, top_n=10, ration=0.5):
         if self.annoy_model is None:
-            raise ValueError('Annoy model is not built. Run init_annoy_model method first.')
+            raise ValueError('Annoy model is not built. Run build_annoy_model method first.')
         if agg:
             agg_emb = self.get_agreggated_embedding(film_ids).cpu().numpy()
         else:
@@ -182,7 +182,7 @@ class Inference:
         agg_emb = agg_emb / np.linalg.norm(agg_emb, ord=2, axis=-1, keepdims=True)
         text_emb = text_emb / np.linalg.norm(text_emb, ord=2, axis=-1, keepdims=True)
 
-        mean_emb = np.mean([agg_emb, text_emb], axis=0)
+        mean_emb = (1 - ration) * agg_emb + ration * text_emb
         assert mean_emb.shape[0] == self.dim
 
         if in_films:

@@ -158,7 +158,7 @@ def prepare_dataset(user_item_sequences, film_descriptions, tokenizer, vocab, ma
                 description = film_descriptions[vocab.index_to_word[film_id]]
             else:
                 description = ""
-            encoded_description = tokenizer(description, return_tensors="pt", max_length=125, truncation=True, padding="max_length")
+            encoded_description = tokenizer(description, return_tensors="pt", max_length=200, truncation=True, padding="max_length")
             film_descriptions_encoded[film_id] = {
                 'input_ids': encoded_description['input_ids'].squeeze(0),
                 'attention_mask': encoded_description['attention_mask'].squeeze(0)
