@@ -5,7 +5,7 @@ from src.models import AggregatedLoss
 
 
 def train_clip(film_encoder, text_encoder, train_loader, val_loader,
-               epochs, lr, device='cpu', iter_verbose=500, folder='artifacts'):
+               epochs, lr, device='cpu', iter_verbose=500, folder=None):
     aggregated_loss = AggregatedLoss().to(device)
     optimizer = torch.optim.Adam(list(film_encoder.parameters()) + list(text_encoder.parameters()), lr=lr)
 
