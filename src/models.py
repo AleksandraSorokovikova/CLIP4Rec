@@ -5,6 +5,7 @@ import numpy as np
 from annoy import AnnoyIndex
 from tqdm import tqdm
 import pickle
+from openai import OpenAI
 
 
 class TextEncoder(nn.Module):
@@ -33,6 +34,47 @@ class TextEncoder(nn.Module):
             output = cls_embedding.view(batch_size, num_films, -1)
         return output
 
+
+class TextEncoderOpenAI(nn.Module):
+    def __init__(self, model="text-embedding-3-large", model_dim=512, output_dim=512, add_fc_layer=True, device='cpu'):
+        super(TextEncoderOpenAI, self).__init__()
+        self.client = OpenAI()
+        self.model = model
+        self.model_dim = model_dim
+        self.output_dim = output_dim
+        self.fc = nn.Linear(model_dim, output_dim)
+        self.tanh = nn.Tanh()
+        self.add_fc_layer = add_fc_layer
+        self.device = device
+
+    def forward(self, input_ids, attention_mask):
+        embeddings = []
+        for sequences in input_ids:
+            tokens = []
+            for sequence in sequences:
+                sequence = sequence.cpu().numpy()
+                mask = (sequence != 0)
+                sequence = sequence[mask].tolist()
+                tokens.append([0] if sequence == [] else sequence)
+
+            embedding = self.client.embeddings.create(
+                model=self.model,
+                input=tokens,
+                dimensions=self.model_dim
+            )
+            embeddings.append(torch.stack([
+                torch.tensor(embedding.data[i].embedding) for i in range(len(embedding.data))
+            ]))
+        embeddings = torch.stack(embeddings).to(self.device)
+
+        if self.add_fc_layer:
+            fc_output = self.fc(embeddings)
+            activated_output = self.tanh(fc_output)
+            output = activated_output
+        else:
+            output = embeddings
+        return output
+        
 
 class Attention(nn.Module):
     def __init__(self, embedding_dim, hidden_dim):

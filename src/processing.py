@@ -134,7 +134,16 @@ class Vocabulary:
         return self.index_to_word[idx]
 
 
-def prepare_dataset(user_item_sequences, film_descriptions, tokenizer, vocab, max_seq_length=seq_len, encode_descriptions=False):
+def prepare_dataset(
+    user_item_sequences, 
+    film_descriptions, 
+    tokenizer, 
+    vocab, 
+    max_seq_length=seq_len, 
+    encode_descriptions=False,
+    encode_openai=False,
+    max_len = 200,
+):
 
     film_ids_seq = []
     target_id_seq = []
@@ -158,11 +167,23 @@ def prepare_dataset(user_item_sequences, film_descriptions, tokenizer, vocab, ma
                 description = film_descriptions[vocab.index_to_word[film_id]]
             else:
                 description = ""
-            encoded_description = tokenizer(description, return_tensors="pt", max_length=200, truncation=True, padding="max_length")
-            film_descriptions_encoded[film_id] = {
-                'input_ids': encoded_description['input_ids'].squeeze(0),
-                'attention_mask': encoded_description['attention_mask'].squeeze(0)
-            }
+
+            if not encode_openai:
+                encoded_description = tokenizer(description, return_tensors="pt", max_length=max_len, truncation=True, padding="max_length")
+                film_descriptions_encoded[film_id] = {
+                    'input_ids': encoded_description['input_ids'].squeeze(0),
+                    'attention_mask': encoded_description['attention_mask'].squeeze(0)
+                }
+            else:
+                encoded_description = tokenizer.encode(description)
+                encoded_description =  torch.tensor(
+                    encoded_description[:max_len] + [0] * (max_len - len(encoded_description[:max_len]))
+                )
+                attention_mask = torch.tensor([1] * len(encoded_description))
+                film_descriptions_encoded[film_id] = {
+                    'input_ids': encoded_description,
+                    'attention_mask': attention_mask
+                }
         return data, film_descriptions_encoded
     else:
         return data
