@@ -5,9 +5,11 @@ from src.models import AggregatedLoss
 
 
 def train_clip(film_encoder, text_encoder, train_loader, val_loader,
-               epochs, lr, device='cpu', iter_verbose=500, folder=None):
-    aggregated_loss = AggregatedLoss().to(device)
+               epochs, lr, device='cpu', iter_verbose=500, folder=None, writer=None):
+    aggregated_loss = AggregatedLoss(device=device).to(device)
     optimizer = torch.optim.Adam(list(film_encoder.parameters()) + list(text_encoder.parameters()), lr=lr)
+
+    global_batch = 0
 
     for epoch in range(epochs):
         film_encoder.train()
@@ -42,6 +44,7 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader,
             total_train_correct += (predicted == target_id).sum().item()
             total_train_samples += target_id.size(0)
             total_batches += 1
+            global_batch += 1
 
             if (i + 1) % iter_verbose == 0 or i == len(train_loader) - 1:
                 train_accuracy = total_train_correct / total_train_samples
@@ -51,6 +54,11 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader,
                 print(f"Classification loss: {running_classification_loss / total_batches:.4f}")
                 print(f"Contrastive loss: {running_contrastive_loss / total_batches:.4f}")
                 print()
+                if writer is not None:
+                    writer.add_scalar("Accuracy/train", train_accuracy, global_batch)
+                    writer.add_scalar("Agreggated loss/train", running_loss / total_batches, global_batch)
+                    writer.add_scalar("Classification loss/train", running_classification_loss / total_batches, global_batch)
+                    writer.add_scalar("Contrastive loss/train", running_contrastive_loss / total_batches, global_batch)
                 total_train_correct = 0
                 total_train_samples = 0
 
@@ -88,6 +96,10 @@ def train_clip(film_encoder, text_encoder, train_loader, val_loader,
             print(f"Epoch {epoch + 1}: Val Loss: {average_loss:.4f}, Val Accuracy: {accuracy:.4f}")
             print(f"Val Classification loss: {total_classification_loss / len(val_loader):.4f}")
             print(f"Val Contrastive loss: {total_contrastive_loss / len(val_loader):.4f}")
+            if writer is not None:
+                writer.add_scalar("Accuracy/validation", accuracy, (epoch + 1))
+                writer.add_scalar("Classification loss/validation", total_classification_loss / len(val_loader), (epoch + 1))
+                writer.add_scalar("Contrastive loss/validation", total_contrastive_loss / len(val_loader), (epoch + 1))
 
         if folder:
             torch.save(film_encoder.state_dict(), f'{folder}/film_encoder_weights_{epoch}.pth')

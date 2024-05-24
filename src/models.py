@@ -217,7 +217,7 @@ class AggregatedLoss(nn.Module):
         self.alpha = alpha
         self.device = device
         self.cross_entropy = nn.CrossEntropyLoss().to(self.device)
-        self.clip_contrastive_loss = CLIPLoss(temperature=temperature).to(self.device)
+        self.clip_contrastive_loss = CLIPLoss(temperature=temperature, device=device).to(self.device)
         (self.ce_mean, self.ce_std, self.clip_mean, self.clip_std) = (0.0, 1.0, 0.0, 1.0)
 
     def forward(self, film_ids, film_logits, target_id, film_embeddings, text_embeddings, train=True):

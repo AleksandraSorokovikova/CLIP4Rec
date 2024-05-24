@@ -169,7 +169,8 @@ class Inference:
             result = self.annoy_model.search_in_film_index(film_embedding, top_n)
         return [self.idx_to_movie[i] for i in result]
 
-    def search_film_by_sequence_and_text(self, film_ids, text, in_films=True, agg=True, top_n=10, ration=0.5):
+    def search_film_by_sequence_and_text(self, list_movies, text, in_films=True, agg=True, top_n=10, ration=0.5):
+        film_ids = [self.movie_to_idx[movie] for movie in list_movies]
         if self.annoy_model is None:
             raise ValueError('Annoy model is not built. Run build_annoy_model method first.')
         if agg:
